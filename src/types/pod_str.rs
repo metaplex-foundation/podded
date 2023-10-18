@@ -3,6 +3,8 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::str;
 
+use crate::ZeroCopy;
+
 /// Struct representing a "pod-enabled" `str`.
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -51,3 +53,5 @@ impl<const MAX_SIZE: usize> From<String> for PodStr<MAX_SIZE> {
         Self { value }
     }
 }
+
+impl<'a, const MAX_SIZE: usize> ZeroCopy<'a, PodStr<MAX_SIZE>> for PodStr<MAX_SIZE> {}
