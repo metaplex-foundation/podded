@@ -1,5 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
+pub mod collections;
 pub mod types;
 
 /// Trait to represent types with zero-copy deserialization.
