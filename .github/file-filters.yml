@@ -1,0 +1,17 @@
+# This file is used by the dorny/paths-filter action to figure out if a crate
+# has changed and thus if it should be built or tested. Any changes in the
+# files listed below will trigger the appropriate workflow.
+
+# Programs.
+
+crate_common: &crate_common
+  - ".github/workflows/build.yml"
+  - ".github/workflows/test.yml"
+  - ".github/workflows/main.yml"
+  - ".github/file-filters.yml"
+  - ".github/.env"
+
+crate: &crate
+  - *crate_common
+  - "Cargo.toml"
+  - "src/**"

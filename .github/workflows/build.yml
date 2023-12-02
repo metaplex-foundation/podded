@@ -1,4 +1,4 @@
-name: Build
+name: Build Crate
 
 on:
   workflow_call:
