@@ -25,6 +25,14 @@ unsafe impl<const MAX_SIZE: usize> Pod for PodStr<MAX_SIZE> {}
 
 unsafe impl<const MAX_SIZE: usize> Zeroable for PodStr<MAX_SIZE> {}
 
+impl<const MAX_SIZE: usize> Default for PodStr<MAX_SIZE> {
+    fn default() -> Self {
+        Self {
+            value: [0; MAX_SIZE],
+        }
+    }
+}
+
 impl<const MAX_SIZE: usize> Deref for PodStr<MAX_SIZE> {
     type Target = [u8];
 
@@ -45,12 +53,18 @@ impl<const MAX_SIZE: usize> Display for PodStr<MAX_SIZE> {
     }
 }
 
-impl<const MAX_SIZE: usize> From<String> for PodStr<MAX_SIZE> {
-    fn from(s: String) -> Self {
+impl<const MAX_SIZE: usize> From<&str> for PodStr<MAX_SIZE> {
+    fn from(s: &str) -> Self {
         let mut value = [0; MAX_SIZE];
         let length = std::cmp::min(s.len(), MAX_SIZE);
         value[..length].clone_from_slice(&s.as_bytes()[..length]);
         Self { value }
+    }
+}
+
+impl<const MAX_SIZE: usize> From<String> for PodStr<MAX_SIZE> {
+    fn from(s: String) -> Self {
+        s.as_str().into()
     }
 }
 
