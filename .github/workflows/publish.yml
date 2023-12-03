@@ -65,7 +65,6 @@ jobs:
           cache: ${{ env.CACHE }}
 
       - name: Publish
-        working-directory: ./clients/rust
         run: |
           if [ "${{ inputs.level }}" == "version" ]; then
             BUMP=${{ inputs.version }}
@@ -86,12 +85,12 @@ jobs:
             git reset --soft HEAD~1
           fi
 
-          PROGRAM_VERSION=`grep -E '^version\s*=' Cargo.toml | awk -F '"' '{print $2}'`
-          echo PROGRAM_VERSION="${PROGRAM_VERSION}" >> $GITHUB_ENV
+          CRATE_VERSION=`grep -E '^version\s*=' Cargo.toml | awk -F '"' '{print $2}'`
+          echo CRATE_VERSION="${CRATE_VERSION}" >> $GITHUB_ENV
 
       - name: Commit and tag new version
         uses: stefanzweifel/git-auto-commit-action@v4
         if: github.event.inputs.dry_run == 'false'
         with:
-          commit_message: "chore: Release mpl-bubblegum version ${{ env.PROGRAM_VERSION }}"
-          tagging_message: mpl-bubblegum@v${{ env.PROGRAM_VERSION }}
+          commit_message: "chore: Release podded version ${{ env.CRATE_VERSION }}"
+          tagging_message: podded@v${{ env.CRATE_VERSION }}
