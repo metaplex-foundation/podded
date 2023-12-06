@@ -25,16 +25,16 @@ enum Field {
 /// Simple `HashSet` implementation where values are stored in a contiguous array.
 pub struct HashSet<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
     /// Node allocator.
-    pub allocator: &'a mut Allocator,
+    allocator: &'a mut Allocator,
 
     /// Array to store the values.
-    pub nodes: &'a mut [Node<V>],
+    nodes: &'a mut [Node<V>],
 }
 
 impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<'a, V> {
-    /// Returns the required size (in bytes) to store a set with the specified capacity.
-    pub fn required_size(capacity: usize) -> usize {
-        std::mem::size_of::<Allocator>() + (1 + capacity) * std::mem::size_of::<Node<V>>()
+    /// Returns the required data length (in bytes) to store a set with the specified capacity.
+    pub const fn required_data_len(capacity: usize) -> usize {
+        std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<V>>())
     }
 
     /// Loads a set from a byte array.
@@ -52,7 +52,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         self.allocator.get_field(Field::Capacity) as usize
     }
 
-    /// Returns the number of nodes in the set.
+    /// Returns the number of values in the set.
     pub fn size(&self) -> usize {
         self.allocator.get_field(Field::Size) as usize
     }
@@ -88,7 +88,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         let mut current = head;
 
         while current != SENTINEL {
-            let node = self.nodes[current as usize];
+            let node = self.nodes[(current - 1) as usize];
             // if the value is already present, we won't add
             // it again
             if node.value == value {
@@ -100,7 +100,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
 
         let node = self.add_node(value);
         self.nodes[index as usize].set_register(Register::Bucket, node);
-        self.nodes[node as usize].set_register(Register::Next, head);
+        self.nodes[(node - 1) as usize].set_register(Register::Next, head);
 
         Some(node)
     }
@@ -126,14 +126,14 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         let mut previous = SENTINEL;
 
         while current != SENTINEL {
-            let node = self.nodes[current as usize];
+            let node = self.nodes[(current - 1) as usize];
             // if the value is already present, we won't add
             // it again
             if &node.value == value {
                 if previous == SENTINEL {
                     self.nodes[index as usize].set_register(Register::Bucket, SENTINEL);
                 } else {
-                    self.nodes[previous as usize]
+                    self.nodes[(previous - 1) as usize]
                         .set_register(Register::Next, node.get_register(Register::Next));
                 }
 
@@ -161,7 +161,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         let mut current = head;
 
         while current != SENTINEL {
-            let node = self.nodes[current as usize];
+            let node = self.nodes[(current - 1) as usize];
             if &node.value == value {
                 return true;
             }
@@ -170,6 +170,14 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         }
 
         false
+    }
+
+    pub fn iter(&self) -> HashSetIterator<'_, V> {
+        HashSetIterator::<V> {
+            hash_set: self,
+            bucket: SENTINEL,
+            node: SENTINEL,
+        }
     }
 
     /// Adds a node to the set.
@@ -197,11 +205,11 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         } else {
             self.allocator.set_field(
                 Field::FreeListHead,
-                self.nodes[free_node as usize].get_register(Register::Next),
+                self.nodes[(free_node - 1) as usize].get_register(Register::Next),
             );
         }
 
-        let entry = &mut self.nodes[free_node as usize];
+        let entry = &mut self.nodes[(free_node - 1) as usize];
 
         entry.value = value;
         // the height field is used to store the free list head, so we make
@@ -224,7 +232,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
             return None;
         }
 
-        let node = &mut self.nodes[index as usize];
+        let node = &mut self.nodes[(index - 1) as usize];
         let value = node.value;
         // clears the node value
         node.value = V::default();
@@ -243,9 +251,9 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
 
 /// The allocator is responsible to keep track of the status of the tree.
 ///
-/// It uses two special fields to determine if the tree is full and to reuse
-/// deleted nodes. Until the tree is full, the `sequence` has the same value
-/// as the `free_list_head` field. When the tree is full, the `sequence` field
+/// It uses two special fields to determine if the set is full and to reuse
+/// deleted nodes. Until the set is full, the `sequence` has the same value
+/// as the `free_list_head` field. When the set is full, the `sequence` field
 /// will be equal to the capacity of the tree. At this point, the `free_list_head`
 /// is used to determine the index of free nodes.
 #[repr(C)]
@@ -281,6 +289,9 @@ pub struct Node<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
     /// Registers for a node. This is fixed to include:
     ///   [0] - bucket
     ///   [1] - next
+    ///
+    /// Note that the index of nodes are always stored as `index + 1` to
+    /// reserve the index 0 as the SENTINEL value.
     registers: [u32; 2],
 
     /// The value associated with the node.
@@ -299,6 +310,36 @@ impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Node<V> {
     }
 }
 
+pub struct HashSetIterator<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
+    hash_set: &'a HashSet<'a, V>,
+    bucket: u32,
+    node: u32,
+}
+
+impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Iterator
+    for HashSetIterator<'a, V>
+{
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bucket <= self.hash_set.capacity() as u32 {
+            while self.node == SENTINEL {
+                self.bucket += 1;
+                if self.bucket > self.hash_set.capacity() as u32 {
+                    return None;
+                }
+                self.node =
+                    self.hash_set.nodes[(self.bucket - 1) as usize].get_register(Register::Bucket);
+            }
+            let node = &self.hash_set.nodes[(self.node - 1) as usize];
+            self.node = node.get_register(Register::Next);
+            Some(&node.value)
+        } else {
+            None
+        }
+    }
+}
+
 unsafe impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Zeroable for Node<V> {}
 
 unsafe impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Pod for Node<V> {}
@@ -314,8 +355,7 @@ mod tests {
     fn test_add() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64>>())];
+        let mut data = [0u8; HashSet::<u64>::required_data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
