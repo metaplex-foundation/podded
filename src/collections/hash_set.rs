@@ -49,7 +49,7 @@ pub struct HashSet<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zero
 
 impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<'a, V> {
     /// Returns the required data length (in bytes) to store a set with the specified capacity.
-    pub const fn required_data_len(capacity: usize) -> usize {
+    pub const fn calculate_data_len(capacity: usize) -> usize {
         std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<V>>())
     }
 
@@ -83,17 +83,19 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         self.allocator.get_field(Field::Size) == 0
     }
 
-    /// Add a value on the set.
+    /// Insert a value on the set.
     ///
-    /// This function will return the index of the value added; otherwise,
-    /// it will return `None`.
+    /// Returns whether the value was newly inserted.  That is:
+    ///   - If the set did not previously contain this value, `true` is returned.
+    ///   - If the set already contained this value, `false` is returned, and the set is not modified.
+    ///   - If the set is full, `false` is returned.
     ///
     /// # Arguments
     ///
     /// * `value` - the value to add.
-    pub fn add(&mut self, value: V) -> Option<u32> {
+    pub fn insert(&mut self, value: V) -> bool {
         if self.size() == self.capacity() {
-            return None;
+            return false;
         }
 
         let mut hasher = DefaultHasher::new();
@@ -108,7 +110,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
             // if the value is already present, we won't add
             // it again
             if node.value == value {
-                return None;
+                return false;
             }
 
             current = node.get_register(Register::Next);
@@ -118,7 +120,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         bucket_node!(self.nodes, index).set_register(Register::Bucket, node);
         node!(self.nodes, node).set_register(Register::Next, head);
 
-        Some(node)
+        true
     }
 
     /// Remove a value from the set.
@@ -272,7 +274,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
 /// It uses two special fields to determine if the set is full and to reuse
 /// deleted nodes. Until the set is full, the `sequence` has the same value
 /// as the `free_list_head` field. When the set is full, the `sequence` field
-/// will be equal to the capacity of the tree. At this point, the `free_list_head`
+/// will be equal to the capacity of the set. At this point, the `free_list_head`
 /// is used to determine the index of free nodes.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -346,10 +348,9 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Iterator
                 if self.bucket > self.hash_set.capacity() as u32 {
                     return None;
                 }
-                self.node =
-                    self.hash_set.nodes[(self.bucket - 1) as usize].get_register(Register::Bucket);
+                self.node = node!(self.hash_set.nodes, self.bucket).get_register(Register::Bucket);
             }
-            let node = &self.hash_set.nodes[(self.node - 1) as usize];
+            let node = &node!(self.hash_set.nodes, self.node);
             self.node = node.get_register(Register::Next);
             Some(&node.value)
         } else {
@@ -370,10 +371,10 @@ mod tests {
     };
 
     #[test]
-    fn test_add() {
+    fn test_insert() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; HashSet::<u64>::required_data_len(CAPACITY)];
+        let mut data = [0u8; HashSet::<u64>::calculate_data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
@@ -381,7 +382,7 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
@@ -393,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn test_large_add() {
+    fn test_large_insert() {
         const CAPACITY: usize = 10_000;
 
         let mut data = [0u8; std::mem::size_of::<Allocator>()
@@ -405,7 +406,7 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
@@ -429,7 +430,7 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
@@ -443,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn test_large_remove_add() {
+    fn test_large_remove_insert() {
         const CAPACITY: usize = 10_000;
 
         let mut data = [0u8; std::mem::size_of::<Allocator>()
@@ -455,7 +456,7 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
@@ -469,7 +470,7 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
@@ -493,22 +494,22 @@ mod tests {
 
         for i in 0..CAPACITY {
             let value = (i + 1) as u64;
-            assert!(set.add(value).is_some());
+            assert!(set.insert(value));
         }
 
         assert_eq!(set.size(), CAPACITY);
         assert!(set.is_full());
 
         // we should not be able to insert when full
-        assert!(set.add(10).is_none());
+        assert!(!set.insert(10));
 
         // when we remove an item
         assert!(set.remove(&1));
         // we can insert a value
-        assert!(set.add(11).is_some());
+        assert!(set.insert(11));
 
         // and then the set is full again
         assert!(set.is_full());
-        assert!(set.add(20).is_none());
+        assert!(!set.insert(20));
     }
 }
