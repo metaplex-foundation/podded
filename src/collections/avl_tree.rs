@@ -21,6 +21,13 @@ enum Field {
     Sequence,
 }
 
+/// Macro to access a node.
+macro_rules! node {
+    ( $array:expr, $index:expr ) => {
+        $array[($index - 1) as usize]
+    };
+}
+
 // Type representing a path entry (parent, branch, child) when
 // traversing the tree.
 type Ancestor = (Option<u32>, Option<Register>, u32);
@@ -33,8 +40,11 @@ pub struct AVLTree<
     K: PartialOrd + Default + Copy + Clone + Pod + Zeroable,
     V: Default + Copy + Clone + Pod + Zeroable,
 > {
-    pub allocator: &'a mut Allocator,
-    pub nodes: &'a mut [Node<K, V>],
+    /// Node allocator.
+    allocator: &'a mut Allocator,
+
+    /// Array of nodes to store the tree.
+    nodes: &'a mut [Node<K, V>],
 }
 
 impl<
@@ -43,7 +53,12 @@ impl<
         V: Default + Copy + Clone + Pod + Zeroable,
     > AVLTree<'a, K, V>
 {
-    pub fn from_bytes(bytes: &'a mut [u8]) -> Self {
+    /// Returns the required data length (in bytes) to store a set with the specified capacity.
+    pub const fn data_len(capacity: usize) -> usize {
+        std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<K, V>>())
+    }
+
+    pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
         let (allocator, nodes) = bytes.split_at_mut(std::mem::size_of::<Allocator>());
 
         let allocator = bytemuck::from_bytes_mut::<Allocator>(allocator);
@@ -58,7 +73,7 @@ impl<
     }
 
     /// Returns the number of nodes in the tree.
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.allocator.get_field(Field::Size) as usize
     }
 
@@ -79,7 +94,7 @@ impl<
     /// * `key` - key to look up the value.
     pub fn get(&self, key: &K) -> Option<V> {
         self.find(key)
-            .map(|node_index| self.nodes[node_index as usize].value)
+            .map(|node_index| node!(self.nodes, node_index).value)
     }
 
     /// Return a mutable reference to the  value under the specified key, if one is found.
@@ -89,7 +104,7 @@ impl<
     /// * `key` - key to look up the value.
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         self.find(key)
-            .map(|node_index| &mut self.nodes[node_index as usize].value)
+            .map(|node_index| &mut node!(self.nodes, node_index).value)
     }
 
     /// Insert a value on the tree at the specified key.
@@ -110,18 +125,18 @@ impl<
             return Some(root);
         }
 
-        let mut path: Vec<Ancestor> = Vec::with_capacity((self.size() as f64).log2() as usize);
+        let mut path: Vec<Ancestor> = Vec::with_capacity((self.len() as f64).log2() as usize);
         path.push((None, None, reference_node));
 
         loop {
-            let current_key = self.nodes[reference_node as usize].key;
+            let current_key = node!(self.nodes, reference_node).key;
             let parent = reference_node;
 
             let branch = if key < current_key {
-                reference_node = self.nodes[parent as usize].get_register(Register::Left);
+                reference_node = node!(self.nodes, parent).get_register(Register::Left);
                 Register::Left
             } else if key > current_key {
-                reference_node = self.nodes[parent as usize].get_register(Register::Right);
+                reference_node = node!(self.nodes, parent).get_register(Register::Right);
                 Register::Right
             } else {
                 return None;
@@ -154,18 +169,18 @@ impl<
             return None;
         }
 
-        let mut path: Vec<Ancestor> = Vec::with_capacity((self.size() as f64).log2() as usize);
+        let mut path: Vec<Ancestor> = Vec::with_capacity((self.len() as f64).log2() as usize);
         path.push((None, None, node_index));
 
         while node_index != SENTINEL {
-            let current_key = self.nodes[node_index as usize].key;
+            let current_key = node!(self.nodes, node_index).key;
             let parent = node_index;
 
             let branch = if *key < current_key {
-                node_index = self.nodes[parent as usize].get_register(Register::Left);
+                node_index = node!(self.nodes, parent).get_register(Register::Left);
                 Register::Left
             } else if *key > current_key {
-                node_index = self.nodes[parent as usize].get_register(Register::Right);
+                node_index = node!(self.nodes, parent).get_register(Register::Right);
                 Register::Right
             } else {
                 break;
@@ -179,18 +194,18 @@ impl<
             return None;
         }
 
-        let left = self.nodes[node_index as usize].get_register(Register::Left);
-        let right = self.nodes[node_index as usize].get_register(Register::Right);
+        let left = node!(self.nodes, node_index).get_register(Register::Left);
+        let right = node!(self.nodes, node_index).get_register(Register::Right);
 
         let replacement = if left != SENTINEL && right != SENTINEL {
             let mut leftmost = right;
             let mut leftmost_parent = SENTINEL;
             // path to the leftmost descendant
-            let mut inner_path = Vec::with_capacity((self.size() as f64).log2() as usize);
+            let mut inner_path = Vec::with_capacity((self.len() as f64).log2() as usize);
 
-            while self.nodes[leftmost as usize].get_register(Register::Left) != SENTINEL {
+            while node!(self.nodes, leftmost).get_register(Register::Left) != SENTINEL {
                 leftmost_parent = leftmost;
-                leftmost = self.nodes[leftmost as usize].get_register(Register::Left);
+                leftmost = node!(self.nodes, leftmost).get_register(Register::Left);
                 inner_path.push((Some(leftmost_parent), Some(Register::Left), leftmost));
             }
 
@@ -198,7 +213,7 @@ impl<
                 self.update_child(
                     leftmost_parent,
                     Register::Left,
-                    self.nodes[leftmost as usize].get_register(Register::Right),
+                    node!(self.nodes, leftmost).get_register(Register::Right),
                 );
             }
 
@@ -264,11 +279,11 @@ impl<
             return None;
         }
 
-        while self.nodes[node as usize].get_register(Register::Left) != SENTINEL {
-            node = self.nodes[node as usize].get_register(Register::Left);
+        while node!(self.nodes, node).get_register(Register::Left) != SENTINEL {
+            node = node!(self.nodes, node).get_register(Register::Left);
         }
 
-        Some(self.nodes[node as usize].key)
+        Some(node!(self.nodes, node).key)
     }
 
     /// Checks whether a key is present in the tree or not.
@@ -284,12 +299,12 @@ impl<
         let mut reference_node = self.allocator.get_field(Field::Root);
 
         while reference_node != SENTINEL {
-            let current = self.nodes[reference_node as usize].key;
+            let current = node!(self.nodes, reference_node).key;
 
             let target = if *key < current {
-                self.nodes[reference_node as usize].get_register(Register::Left)
+                node!(self.nodes, reference_node).get_register(Register::Left)
             } else if *key > current {
-                self.nodes[reference_node as usize].get_register(Register::Right)
+                node!(self.nodes, reference_node).get_register(Register::Right)
             } else {
                 return Some(reference_node);
             };
@@ -325,11 +340,11 @@ impl<
         } else {
             self.allocator.set_field(
                 Field::FreeListHead,
-                self.nodes[free_node as usize].get_register(Register::Height),
+                node!(self.nodes, free_node).get_register(Register::Height),
             );
         }
 
-        let entry = &mut self.nodes[free_node as usize];
+        let entry = &mut node!(self.nodes, free_node);
 
         entry.key = key;
         entry.value = value;
@@ -353,14 +368,14 @@ impl<
     /// * `path` - path to rebalance. The path is visited in reverse order.
     fn rebalance(&mut self, path: Vec<Ancestor>) {
         for (parent, branch, child) in path.iter().rev() {
-            let left = self.nodes[*child as usize].get_register(Register::Left);
-            let right = self.nodes[*child as usize].get_register(Register::Right);
+            let left = node!(self.nodes, *child).get_register(Register::Left);
+            let right = node!(self.nodes, *child).get_register(Register::Right);
 
             let balance_factor = self.balance_factor(left, right);
 
             let index = if balance_factor > 1 {
-                let left_left = self.nodes[left as usize].get_register(Register::Left);
-                let left_right = self.nodes[left as usize].get_register(Register::Right);
+                let left_left = node!(self.nodes, left).get_register(Register::Left);
+                let left_right = node!(self.nodes, left).get_register(Register::Right);
                 let left_balance_factor = self.balance_factor(left_left, left_right);
 
                 if left_balance_factor < 0 {
@@ -369,8 +384,8 @@ impl<
                 }
                 Some(self.right_rotate(*child))
             } else if balance_factor < -1 {
-                let right_left = self.nodes[right as usize].get_register(Register::Left);
-                let right_right = self.nodes[right as usize].get_register(Register::Right);
+                let right_left = node!(self.nodes, right).get_register(Register::Left);
+                let right_right = node!(self.nodes, right).get_register(Register::Right);
                 let right_balance_factor = self.balance_factor(right_left, right_right);
 
                 if right_balance_factor > 0 {
@@ -406,12 +421,12 @@ impl<
     fn balance_factor(&self, left: u32, right: u32) -> i32 {
         // safe to convert to i32 since height will be at most log2(capacity)
         let left_height = if left != SENTINEL {
-            self.nodes[left as usize].get_register(Register::Height) as i32 + 1
+            node!(self.nodes, left).get_register(Register::Height) as i32 + 1
         } else {
             0
         };
         let right_height = if right != SENTINEL {
-            self.nodes[right as usize].get_register(Register::Height) as i32 + 1
+            node!(self.nodes, right).get_register(Register::Height) as i32 + 1
         } else {
             0
         };
@@ -425,8 +440,8 @@ impl<
     ///
     /// * `index` - index of the unballanced node.
     fn left_rotate(&mut self, index: u32) -> u32 {
-        let right = self.nodes[index as usize].get_register(Register::Right);
-        let right_left = self.nodes[right as usize].get_register(Register::Left);
+        let right = node!(self.nodes, index).get_register(Register::Right);
+        let right_left = node!(self.nodes, right).get_register(Register::Left);
 
         self.update_child(index, Register::Right, right_left);
         self.update_child(right, Register::Left, index);
@@ -440,8 +455,8 @@ impl<
     ///
     /// * `index` - index of the unballanced node.
     fn right_rotate(&mut self, index: u32) -> u32 {
-        let left = self.nodes[index as usize].get_register(Register::Left);
-        let left_right = self.nodes[left as usize].get_register(Register::Right);
+        let left = node!(self.nodes, index).get_register(Register::Left);
+        let left_right = node!(self.nodes, left).get_register(Register::Right);
 
         self.update_child(index, Register::Left, left_right);
         self.update_child(left, Register::Right, index);
@@ -463,8 +478,8 @@ impl<
     #[inline]
     fn update_child(&mut self, parent: u32, branch: Register, child: u32) {
         match branch {
-            Register::Left => self.nodes[parent as usize].set_register(Register::Left, child),
-            Register::Right => self.nodes[parent as usize].set_register(Register::Right, child),
+            Register::Left => node!(self.nodes, parent).set_register(Register::Left, child),
+            Register::Right => node!(self.nodes, parent).set_register(Register::Right, child),
             _ => panic!("invalid branch"),
         }
 
@@ -479,19 +494,19 @@ impl<
     ///
     /// * `index` - index of the node.
     fn update_height(&mut self, index: u32) {
-        let left = self.nodes[index as usize].get_register(Register::Left);
-        let right = self.nodes[index as usize].get_register(Register::Right);
+        let left = node!(self.nodes, index).get_register(Register::Left);
+        let right = node!(self.nodes, index).get_register(Register::Right);
 
         let height = if left == SENTINEL && right == SENTINEL {
             0
         } else {
             let left_height = if left != SENTINEL {
-                self.nodes[left as usize].get_register(Register::Height)
+                node!(self.nodes, left).get_register(Register::Height)
             } else {
                 0
             };
             let right_height = if right != SENTINEL {
-                self.nodes[right as usize].get_register(Register::Height)
+                node!(self.nodes, right).get_register(Register::Height)
             } else {
                 0
             };
@@ -499,7 +514,7 @@ impl<
             max(left_height, right_height) + 1
         };
 
-        self.nodes[index as usize].set_register(Register::Height, height);
+        node!(self.nodes, index).set_register(Register::Height, height);
     }
 
     /// Remove a node from the tree, returning its value.
@@ -508,7 +523,7 @@ impl<
             return None;
         }
 
-        let node = &mut self.nodes[index as usize];
+        let node = &mut node!(self.nodes, index);
         let value = node.value;
 
         // clears the node values
@@ -616,19 +631,14 @@ unsafe impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::collections::{
-        avl_tree::{Allocator, Node},
-        AVLTree,
-    };
+    use crate::collections::AVLTree;
 
     #[test]
     fn test_insert() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64, u64>>())];
-
-        let mut tree = AVLTree::from_bytes(&mut data);
+        let mut data = [0u8; AVLTree::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTree::from_bytes_mut(&mut data);
 
         tree.allocator.initialize(CAPACITY as u32);
 
@@ -638,7 +648,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
 
         for i in 0..CAPACITY {
             let key = i as u64;
@@ -651,10 +661,8 @@ mod tests {
     fn test_large_insert() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64, u64>>())];
-
-        let mut tree = AVLTree::from_bytes(&mut data);
+        let mut data = [0u8; AVLTree::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTree::from_bytes_mut(&mut data);
         tree.allocator.initialize(CAPACITY as u32);
 
         for i in 0..CAPACITY {
@@ -663,7 +671,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
 
         for i in 0..CAPACITY {
             let key = (i + 1) as u64;
@@ -676,10 +684,8 @@ mod tests {
     fn test_large_remove() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64, u64>>())];
-
-        let mut tree = AVLTree::from_bytes(&mut data);
+        let mut data = [0u8; AVLTree::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTree::from_bytes_mut(&mut data);
         tree.allocator.initialize(CAPACITY as u32);
 
         for i in 0..CAPACITY {
@@ -688,7 +694,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
 
         for i in 0..CAPACITY {
             let key = (i + 1) as u64;
@@ -696,17 +702,15 @@ mod tests {
             tree.remove(&key).unwrap();
         }
 
-        assert_eq!(tree.size(), 0);
+        assert_eq!(tree.len(), 0);
     }
 
     #[test]
     fn test_large_remove_add() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64, u64>>())];
-
-        let mut tree = AVLTree::from_bytes(&mut data);
+        let mut data = [0u8; AVLTree::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTree::from_bytes_mut(&mut data);
         tree.allocator.initialize(CAPACITY as u32);
 
         for i in 0..CAPACITY {
@@ -715,7 +719,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
 
         for i in 0..CAPACITY {
             let key = (i + 1) as u64;
@@ -723,7 +727,7 @@ mod tests {
             tree.remove(&key).unwrap();
         }
 
-        assert_eq!(tree.size(), 0);
+        assert_eq!(tree.len(), 0);
 
         for i in 0..CAPACITY {
             let key = (i + 1) as u64;
@@ -731,7 +735,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
 
         for i in 0..CAPACITY {
             let key = (i + 1) as u64;
@@ -744,10 +748,8 @@ mod tests {
     fn test_insert_when_full() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64, u64>>())];
-
-        let mut tree = AVLTree::from_bytes(&mut data);
+        let mut data = [0u8; AVLTree::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTree::from_bytes_mut(&mut data);
 
         tree.allocator.initialize(CAPACITY as u32);
 
@@ -757,7 +759,7 @@ mod tests {
             let _ = tree.insert(key, value);
         }
 
-        assert_eq!(tree.size(), CAPACITY);
+        assert_eq!(tree.len(), CAPACITY);
         assert!(tree.is_full());
 
         // we should not be able to insert when full

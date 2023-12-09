@@ -1,10 +1,10 @@
-use bytemuck::{Pod, Zeroable};
+use bytemuck::Pod;
 
 pub mod collections;
 pub mod types;
 
 /// Trait to represent types with zero-copy deserialization.
-pub trait ZeroCopy<'a, T: Pod + Zeroable>
+pub trait ZeroCopy<'a, T: Pod>
 where
     Self: Pod,
 {

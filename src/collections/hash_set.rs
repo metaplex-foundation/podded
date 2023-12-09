@@ -23,7 +23,6 @@ enum Field {
 }
 
 /// Macro to access a bucket node.
-#[macro_export]
 macro_rules! bucket_node {
     ( $array:expr, $index:expr ) => {
         $array[$index as usize]
@@ -31,7 +30,6 @@ macro_rules! bucket_node {
 }
 
 /// Macro to access a node.
-#[macro_export]
 macro_rules! node {
     ( $array:expr, $index:expr ) => {
         $array[($index - 1) as usize]
@@ -49,7 +47,7 @@ pub struct HashSet<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zero
 
 impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<'a, V> {
     /// Returns the required data length (in bytes) to store a set with the specified capacity.
-    pub const fn calculate_data_len(capacity: usize) -> usize {
+    pub const fn data_len(capacity: usize) -> usize {
         std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<V>>())
     }
 
@@ -365,16 +363,13 @@ unsafe impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Pod f
 
 #[cfg(test)]
 mod tests {
-    use crate::collections::{
-        hash_set::{Allocator, Node},
-        HashSet,
-    };
+    use crate::collections::HashSet;
 
     #[test]
     fn test_insert() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; HashSet::<u64>::calculate_data_len(CAPACITY)];
+        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
@@ -397,8 +392,7 @@ mod tests {
     fn test_large_insert() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64>>())];
+        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
@@ -421,8 +415,7 @@ mod tests {
     fn test_large_remove() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64>>())];
+        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
@@ -447,8 +440,7 @@ mod tests {
     fn test_large_remove_insert() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64>>())];
+        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
@@ -485,8 +477,7 @@ mod tests {
     fn test_insert_when_full() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; std::mem::size_of::<Allocator>()
-            + ((1 + CAPACITY) * std::mem::size_of::<Node<u64>>())];
+        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
         let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
