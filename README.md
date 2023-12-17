@@ -10,7 +10,7 @@
 
 ## Overview
 
-This library offer `Pod`-enabled types and also non-static sized data structures that offer zero-copy performance.
+This library offer `Pod`-enabled types and non-static sized data structures that offer zero-copy performance.
 
 ## Getting Started
 
