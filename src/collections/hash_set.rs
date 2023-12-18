@@ -52,7 +52,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
     }
 
     /// Loads a set from a byte array.
-    pub fn from_bytes_mut(bytes: &'a [u8]) -> Self {
+    pub fn from_bytes(bytes: &'a [u8]) -> Self {
         let (allocator, nodes) = bytes.split_at(std::mem::size_of::<Allocator>());
 
         let allocator = bytemuck::from_bytes::<Allocator>(allocator);
