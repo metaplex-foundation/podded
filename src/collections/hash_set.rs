@@ -61,6 +61,13 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         Self { allocator, nodes }
     }
 
+    /// Initializes the set with the specified capacity.
+    ///
+    /// This function should be called once when the set is created.
+    pub fn initialize(&mut self, capacity: u32) {
+        self.allocator.initialize(capacity)
+    }
+
     /// Returns the capacity of the set.
     pub fn capacity(&self) -> usize {
         self.allocator.get_field(Field::Capacity) as usize

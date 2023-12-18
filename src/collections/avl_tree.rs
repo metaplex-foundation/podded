@@ -53,11 +53,12 @@ impl<
         V: Default + Copy + Clone + Pod + Zeroable,
     > AVLTree<'a, K, V>
 {
-    /// Returns the required data length (in bytes) to store a set with the specified capacity.
+    /// Returns the required data length (in bytes) to store a tree with the specified capacity.
     pub const fn data_len(capacity: usize) -> usize {
         std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<K, V>>())
     }
 
+    /// Loads a tree from a byte array.
     pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
         let (allocator, nodes) = bytes.split_at_mut(std::mem::size_of::<Allocator>());
 
@@ -65,6 +66,13 @@ impl<
         let nodes = bytemuck::cast_slice_mut(nodes);
 
         Self { allocator, nodes }
+    }
+
+    /// Initializes the tree with the specified capacity.
+    ///
+    /// This function should be called once when the tree is created.
+    pub fn initialize(&mut self, capacity: u32) {
+        self.allocator.initialize(capacity)
     }
 
     /// Returns the capacity of the tree.
