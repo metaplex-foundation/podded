@@ -1,10 +1,10 @@
 use bytemuck::{Pod, Zeroable};
 use std::cmp::max;
 
-// Constant to represent an empty value.
+/// Constant to represent an empty value.
 const SENTINEL: u32 = 0;
 
-// Enum representing the fields of a node.
+/// Enum representing the fields of a node.
 #[derive(Copy, Clone)]
 enum Register {
     Left,
@@ -12,7 +12,7 @@ enum Register {
     Height,
 }
 
-// Enum representing the fields of the allocator.
+/// Enum representing the fields of the allocator.
 enum Field {
     Root,
     Size,
@@ -21,6 +21,10 @@ enum Field {
     Sequence,
 }
 
+/// Type representing a path entry (parent, branch, child) when
+/// traversing the tree.
+type Ancestor = (Option<u32>, Option<Register>, u32);
+
 /// Macro to access a node.
 macro_rules! node {
     ( $array:expr, $index:expr ) => {
@@ -28,9 +32,96 @@ macro_rules! node {
     };
 }
 
-// Type representing a path entry (parent, branch, child) when
-// traversing the tree.
-type Ancestor = (Option<u32>, Option<Register>, u32);
+/// Macro to implement the readonly interface for an AVL tree type.
+macro_rules! readonly_impl {
+    ( $name:tt ) => {
+        impl<
+                'a,
+                K: PartialOrd + Default + Copy + Clone + Pod + Zeroable,
+                V: Default + Copy + Clone + Pod + Zeroable,
+            > $name<'a, K, V>
+        {
+            /// Returns the required data length (in bytes) to store a tree with the specified capacity.
+            pub const fn data_len(capacity: usize) -> usize {
+                std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<K, V>>())
+            }
+
+            /// Returns the capacity of the tree.
+            pub fn capacity(&self) -> usize {
+                self.allocator.get_field(Field::Capacity) as usize
+            }
+
+            /// Returns the number of nodes in the tree.
+            pub fn len(&self) -> usize {
+                self.allocator.get_field(Field::Size) as usize
+            }
+
+            /// Indicates whether the tree is full or not.
+            pub fn is_full(&self) -> bool {
+                self.allocator.get_field(Field::Size) >= self.allocator.get_field(Field::Capacity)
+            }
+
+            /// Indicates whether the tree is empty or not.
+            pub fn is_empty(&self) -> bool {
+                self.allocator.get_field(Field::Size) == 0
+            }
+
+            /// Return the value under the specified key, if one is found.
+            ///
+            /// # Arguments
+            ///
+            /// * `key` - key to look up the value.
+            pub fn get(&self, key: &K) -> Option<V> {
+                self.find(key)
+                    .map(|node_index| node!(self.nodes, node_index).value)
+            }
+
+            // Find the lowest entry.
+            pub fn lowest(&self) -> Option<K> {
+                let mut node = self.allocator.get_field(Field::Root);
+
+                if node == SENTINEL {
+                    return None;
+                }
+
+                while node!(self.nodes, node).get_register(Register::Left) != SENTINEL {
+                    node = node!(self.nodes, node).get_register(Register::Left);
+                }
+
+                Some(node!(self.nodes, node).key)
+            }
+
+            /// Checks whether a key is present in the tree or not.
+            ///
+            /// # Arguments
+            ///
+            /// * `key` - the key of the node.
+            pub fn contains(&self, key: &K) -> bool {
+                self.find(key).is_some()
+            }
+
+            fn find(&self, key: &K) -> Option<u32> {
+                let mut reference_node = self.allocator.get_field(Field::Root);
+
+                while reference_node != SENTINEL {
+                    let current = node!(self.nodes, reference_node).key;
+
+                    let target = if *key < current {
+                        node!(self.nodes, reference_node).get_register(Register::Left)
+                    } else if *key > current {
+                        node!(self.nodes, reference_node).get_register(Register::Right)
+                    } else {
+                        return Some(reference_node);
+                    };
+
+                    reference_node = target;
+                }
+
+                None
+            }
+        }
+    };
+}
 
 /// AVL tree struct, which is a self-balancing binary search tree. Values in the
 /// tree are stored as such the height of two sibling subtrees differ by one at
@@ -49,17 +140,14 @@ pub struct AVLTree<
     nodes: &'a [Node<K, V>],
 }
 
+readonly_impl!(AVLTree);
+
 impl<
         'a,
         K: PartialOrd + Default + Copy + Clone + Pod + Zeroable,
         V: Default + Copy + Clone + Pod + Zeroable,
     > AVLTree<'a, K, V>
 {
-    /// Returns the required data length (in bytes) to store a tree with the specified capacity.
-    pub const fn data_len(capacity: usize) -> usize {
-        std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<K, V>>())
-    }
-
     /// Loads a tree from a byte array.
     pub fn from_bytes(bytes: &'a [u8]) -> Self {
         let (allocator, nodes) = bytes.split_at(std::mem::size_of::<Allocator>());
@@ -68,80 +156,6 @@ impl<
         let nodes = bytemuck::cast_slice(nodes);
 
         Self { allocator, nodes }
-    }
-
-    /// Returns the capacity of the tree.
-    pub fn capacity(&self) -> usize {
-        self.allocator.get_field(Field::Capacity) as usize
-    }
-
-    /// Returns the number of nodes in the tree.
-    pub fn len(&self) -> usize {
-        self.allocator.get_field(Field::Size) as usize
-    }
-
-    /// Indicates whether the tree is full or not.
-    pub fn is_full(&self) -> bool {
-        self.allocator.get_field(Field::Size) >= self.allocator.get_field(Field::Capacity)
-    }
-
-    /// Indicates whether the tree is empty or not.
-    pub fn is_empty(&self) -> bool {
-        self.allocator.get_field(Field::Size) == 0
-    }
-
-    /// Return the value under the specified key, if one is found.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - key to look up the value.
-    pub fn get(&self, key: &K) -> Option<V> {
-        self.find(key)
-            .map(|node_index| node!(self.nodes, node_index).value)
-    }
-
-    // Find the lowest entry.
-    pub fn lowest(&self) -> Option<K> {
-        let mut node = self.allocator.get_field(Field::Root);
-
-        if node == SENTINEL {
-            return None;
-        }
-
-        while node!(self.nodes, node).get_register(Register::Left) != SENTINEL {
-            node = node!(self.nodes, node).get_register(Register::Left);
-        }
-
-        Some(node!(self.nodes, node).key)
-    }
-
-    /// Checks whether a key is present in the tree or not.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - the key of the node.
-    pub fn contains(&self, key: &K) -> bool {
-        self.find(key).is_some()
-    }
-
-    fn find(&self, key: &K) -> Option<u32> {
-        let mut reference_node = self.allocator.get_field(Field::Root);
-
-        while reference_node != SENTINEL {
-            let current = node!(self.nodes, reference_node).key;
-
-            let target = if *key < current {
-                node!(self.nodes, reference_node).get_register(Register::Left)
-            } else if *key > current {
-                node!(self.nodes, reference_node).get_register(Register::Right)
-            } else {
-                return Some(reference_node);
-            };
-
-            reference_node = target;
-        }
-
-        None
     }
 }
 
@@ -162,17 +176,14 @@ pub struct AVLTreeMut<
     nodes: &'a mut [Node<K, V>],
 }
 
+readonly_impl!(AVLTreeMut);
+
 impl<
         'a,
         K: PartialOrd + Default + Copy + Clone + Pod + Zeroable,
         V: Default + Copy + Clone + Pod + Zeroable,
     > AVLTreeMut<'a, K, V>
 {
-    /// Returns the required data length (in bytes) to store a tree with the specified capacity.
-    pub const fn data_len(capacity: usize) -> usize {
-        std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<K, V>>())
-    }
-
     /// Loads a tree from a byte array.
     pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
         let (allocator, nodes) = bytes.split_at_mut(std::mem::size_of::<Allocator>());
@@ -188,36 +199,6 @@ impl<
     /// This function should be called once when the tree is created.
     pub fn initialize(&mut self, capacity: u32) {
         self.allocator.initialize(capacity)
-    }
-
-    /// Returns the capacity of the tree.
-    pub fn capacity(&self) -> usize {
-        self.allocator.get_field(Field::Capacity) as usize
-    }
-
-    /// Returns the number of nodes in the tree.
-    pub fn len(&self) -> usize {
-        self.allocator.get_field(Field::Size) as usize
-    }
-
-    /// Indicates whether the tree is full or not.
-    pub fn is_full(&self) -> bool {
-        self.allocator.get_field(Field::Size) >= self.allocator.get_field(Field::Capacity)
-    }
-
-    /// Indicates whether the tree is empty or not.
-    pub fn is_empty(&self) -> bool {
-        self.allocator.get_field(Field::Size) == 0
-    }
-
-    /// Return the value under the specified key, if one is found.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - key to look up the value.
-    pub fn get(&self, key: &K) -> Option<V> {
-        self.find(key)
-            .map(|node_index| node!(self.nodes, node_index).value)
     }
 
     /// Return a mutable reference to the  value under the specified key, if one is found.
@@ -392,50 +373,6 @@ impl<
         self.rebalance(path);
         // clears the node information
         self.remove_node(node_index)
-    }
-
-    // Find the lowest entry.
-    pub fn lowest(&self) -> Option<K> {
-        let mut node = self.allocator.get_field(Field::Root);
-
-        if node == SENTINEL {
-            return None;
-        }
-
-        while node!(self.nodes, node).get_register(Register::Left) != SENTINEL {
-            node = node!(self.nodes, node).get_register(Register::Left);
-        }
-
-        Some(node!(self.nodes, node).key)
-    }
-
-    /// Checks whether a key is present in the tree or not.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - the key of the node.
-    pub fn contains(&self, key: &K) -> bool {
-        self.find(key).is_some()
-    }
-
-    fn find(&self, key: &K) -> Option<u32> {
-        let mut reference_node = self.allocator.get_field(Field::Root);
-
-        while reference_node != SENTINEL {
-            let current = node!(self.nodes, reference_node).key;
-
-            let target = if *key < current {
-                node!(self.nodes, reference_node).get_register(Register::Left)
-            } else if *key > current {
-                node!(self.nodes, reference_node).get_register(Register::Right)
-            } else {
-                return Some(reference_node);
-            };
-
-            reference_node = target;
-        }
-
-        None
     }
 
     /// Adds a node to the tree.
