@@ -39,13 +39,123 @@ macro_rules! node {
 /// Simple `HashSet` implementation where values are stored in a contiguous array.
 pub struct HashSet<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
     /// Node allocator.
+    allocator: &'a Allocator,
+
+    /// Array to store the values.
+    nodes: &'a [Node<V>],
+}
+
+impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<'a, V> {
+    /// Returns the required data length (in bytes) to store a set with the specified capacity.
+    pub const fn data_len(capacity: usize) -> usize {
+        std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<V>>())
+    }
+
+    /// Loads a set from a byte array.
+    pub fn from_bytes_mut(bytes: &'a [u8]) -> Self {
+        let (allocator, nodes) = bytes.split_at(std::mem::size_of::<Allocator>());
+
+        let allocator = bytemuck::from_bytes::<Allocator>(allocator);
+        let nodes = bytemuck::cast_slice(nodes);
+
+        Self { allocator, nodes }
+    }
+
+    /// Returns the capacity of the set.
+    pub fn capacity(&self) -> usize {
+        self.allocator.get_field(Field::Capacity) as usize
+    }
+
+    /// Returns the number of values in the set.
+    pub fn size(&self) -> usize {
+        self.allocator.get_field(Field::Size) as usize
+    }
+
+    /// Indicates whether the set is full or not.
+    pub fn is_full(&self) -> bool {
+        self.allocator.get_field(Field::Size) >= self.allocator.get_field(Field::Capacity)
+    }
+
+    /// Indicates whether the set is empty or not.
+    pub fn is_empty(&self) -> bool {
+        self.allocator.get_field(Field::Size) == 0
+    }
+
+    /// Checks whether a value is present in the set or not.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - the value to check.
+    pub fn contains(&self, value: &V) -> bool {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        let index = hasher.finish() as u32 % self.allocator.get_field(Field::Capacity);
+
+        let head = bucket_node!(self.nodes, index).get_register(Register::Bucket);
+        let mut current = head;
+
+        while current != SENTINEL {
+            let node = node!(self.nodes, current);
+            if &node.value == value {
+                return true;
+            }
+
+            current = node.get_register(Register::Next);
+        }
+
+        false
+    }
+
+    /// An iterator visiting all elements in arbitrary order.
+    /// The iterator element type is `&'a V`.
+    pub fn iter(&self) -> HashSetIterator<'_, V> {
+        HashSetIterator::<V> {
+            hash_set: self,
+            bucket: SENTINEL,
+            node: SENTINEL,
+        }
+    }
+}
+
+pub struct HashSetIterator<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
+    hash_set: &'a HashSet<'a, V>,
+    bucket: u32,
+    node: u32,
+}
+
+impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Iterator
+    for HashSetIterator<'a, V>
+{
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bucket <= self.hash_set.capacity() as u32 {
+            while self.node == SENTINEL {
+                self.bucket += 1;
+                if self.bucket > self.hash_set.capacity() as u32 {
+                    return None;
+                }
+                self.node = node!(self.hash_set.nodes, self.bucket).get_register(Register::Bucket);
+            }
+            let node = &node!(self.hash_set.nodes, self.node);
+            self.node = node.get_register(Register::Next);
+            Some(&node.value)
+        } else {
+            None
+        }
+    }
+}
+
+/// Simple `HashSet` implementation where values are stored in a contiguous array.
+pub struct HashSetMut<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
+    /// Node allocator.
     allocator: &'a mut Allocator,
 
     /// Array to store the values.
     nodes: &'a mut [Node<V>],
 }
 
-impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<'a, V> {
+impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSetMut<'a, V> {
     /// Returns the required data length (in bytes) to store a set with the specified capacity.
     pub const fn data_len(capacity: usize) -> usize {
         std::mem::size_of::<Allocator>() + (capacity * std::mem::size_of::<Node<V>>())
@@ -195,16 +305,6 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSet<
         false
     }
 
-    /// An iterator visiting all elements in arbitrary order.
-    /// The iterator element type is `&'a V`.
-    pub fn iter(&self) -> HashSetIterator<'_, V> {
-        HashSetIterator::<V> {
-            hash_set: self,
-            bucket: SENTINEL,
-            node: SENTINEL,
-        }
-    }
-
     /// Adds a node to the set.
     ///
     /// The node is only added if there is space on the nodes' array. The index
@@ -335,49 +435,20 @@ impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Node<V> {
     }
 }
 
-pub struct HashSetIterator<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> {
-    hash_set: &'a HashSet<'a, V>,
-    bucket: u32,
-    node: u32,
-}
-
-impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Iterator
-    for HashSetIterator<'a, V>
-{
-    type Item = &'a V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.bucket <= self.hash_set.capacity() as u32 {
-            while self.node == SENTINEL {
-                self.bucket += 1;
-                if self.bucket > self.hash_set.capacity() as u32 {
-                    return None;
-                }
-                self.node = node!(self.hash_set.nodes, self.bucket).get_register(Register::Bucket);
-            }
-            let node = &node!(self.hash_set.nodes, self.node);
-            self.node = node.get_register(Register::Next);
-            Some(&node.value)
-        } else {
-            None
-        }
-    }
-}
-
 unsafe impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Zeroable for Node<V> {}
 
 unsafe impl<V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> Pod for Node<V> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::collections::HashSet;
+    use crate::collections::HashSetMut;
 
     #[test]
     fn test_insert() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
-        let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
+        let mut data = [0u8; HashSetMut::<u64>::data_len(CAPACITY)];
+        let mut set = HashSetMut::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
         assert_eq!(set.capacity(), CAPACITY);
@@ -399,8 +470,8 @@ mod tests {
     fn test_large_insert() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
-        let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
+        let mut data = [0u8; HashSetMut::<u64>::data_len(CAPACITY)];
+        let mut set = HashSetMut::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
         assert_eq!(set.capacity(), CAPACITY);
@@ -422,8 +493,8 @@ mod tests {
     fn test_large_remove() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
-        let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
+        let mut data = [0u8; HashSetMut::<u64>::data_len(CAPACITY)];
+        let mut set = HashSetMut::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
         assert_eq!(set.capacity(), CAPACITY);
@@ -447,8 +518,8 @@ mod tests {
     fn test_large_remove_insert() {
         const CAPACITY: usize = 10_000;
 
-        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
-        let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
+        let mut data = [0u8; HashSetMut::<u64>::data_len(CAPACITY)];
+        let mut set = HashSetMut::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
         assert_eq!(set.capacity(), CAPACITY);
@@ -484,8 +555,8 @@ mod tests {
     fn test_insert_when_full() {
         const CAPACITY: usize = 10;
 
-        let mut data = [0u8; HashSet::<u64>::data_len(CAPACITY)];
-        let mut set = HashSet::<u64>::from_bytes_mut(&mut data);
+        let mut data = [0u8; HashSetMut::<u64>::data_len(CAPACITY)];
+        let mut set = HashSetMut::<u64>::from_bytes_mut(&mut data);
 
         set.allocator.initialize(CAPACITY as u32);
         assert_eq!(set.capacity(), CAPACITY);
