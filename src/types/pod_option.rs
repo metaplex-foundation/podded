@@ -23,6 +23,10 @@ unsafe impl<T: Nullable> Pod for PodOption<T> {}
 unsafe impl<T: Nullable> Zeroable for PodOption<T> {}
 
 impl<T: Nullable> PodOption<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+
     pub fn value(&self) -> Option<&T> {
         if self.0.is_some() {
             Some(&self.0)
