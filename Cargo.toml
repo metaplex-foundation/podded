@@ -1,6 +1,6 @@
 [package]
 name = "podded"
-version = "0.3.1"
+version = "0.4.0"
 description = "Zero-copy types for constraint environments"
 authors = ["Metaplex Developers <dev@metaplex.com>"]
 repository = "https://github.com/metaplex-foundation/podded"
