@@ -1,11 +1,5 @@
 use bytemuck::{Pod, Zeroable};
 
-/// A `PodBool` value representing a boolean `true`.
-pub const POD_TRUE: PodBool = PodBool(1);
-
-/// A `PodBool` value representing a boolean `false`.
-pub const POD_FALSE: PodBool = PodBool(0);
-
 #[repr(C)]
 #[derive(Copy, Clone, Default, Pod, Zeroable)]
 pub struct PodBool(u8);
