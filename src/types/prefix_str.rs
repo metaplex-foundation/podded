@@ -123,15 +123,15 @@ macro_rules! prefix_str_type {
 
 // "read-only" impl
 prefix_str!((U8PrefixStr, u8), (U16PrefixStr, u16));
+// "mutable" impl
+prefix_str_mut!((U8PrefixStrMut, u8), (U16PrefixStrMut, u16));
+// "shared" impl
 prefix_str_type!(
     (U8PrefixStr, u8),
     (U8PrefixStrMut, u8),
     (U16PrefixStr, u16),
     (U16PrefixStrMut, u16)
 );
-
-// "mutable" impl
-prefix_str_mut!((U8PrefixStrMut, u8), (U16PrefixStrMut, u16));
 
 #[cfg(test)]
 mod tests {
