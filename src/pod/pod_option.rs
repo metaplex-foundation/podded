@@ -15,7 +15,7 @@ pub trait Nullable: Pod {
 /// This can be used when a specific value of `T` indicates that its
 /// value is `None`.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct PodOption<T: Nullable>(T);
 
 unsafe impl<T: Nullable> Pod for PodOption<T> {}
@@ -23,10 +23,12 @@ unsafe impl<T: Nullable> Pod for PodOption<T> {}
 unsafe impl<T: Nullable> Zeroable for PodOption<T> {}
 
 impl<T: Nullable> PodOption<T> {
+    #[inline]
     pub fn new(value: T) -> Self {
         Self(value)
     }
 
+    #[inline]
     pub fn value(&self) -> Option<&T> {
         if self.0.is_some() {
             Some(&self.0)
@@ -35,6 +37,7 @@ impl<T: Nullable> PodOption<T> {
         }
     }
 
+    #[inline]
     pub fn value_mut(&mut self) -> Option<&mut T> {
         if self.0.is_some() {
             Some(&mut self.0)
