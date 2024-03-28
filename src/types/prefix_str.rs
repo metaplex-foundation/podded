@@ -157,6 +157,21 @@ mod tests {
     }
 
     #[test]
+    fn test_new_with_empty_str() {
+        // u8
+        let mut data = [0u8; 1];
+        let prefix_str = U8PrefixStrMut::new(&mut data);
+
+        assert_eq!(prefix_str.len(), 0);
+
+        // u16
+        let mut data = [0u8; 2];
+        let prefix_str = U16PrefixStrMut::new(&mut data);
+
+        assert_eq!(prefix_str.len(), 0);
+    }
+
+    #[test]
     fn test_new_with_shorter_str() {
         // u8
         let mut data = [0u8; 10];
