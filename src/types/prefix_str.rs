@@ -147,13 +147,15 @@ mod tests {
         assert_eq!(prefix_str.as_str(), "str");
         assert_eq!(prefix_str.size(), data.len());
 
-        // u16
-        let mut data = [0u8; 5];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        // u16 - use aligned storage
+        #[repr(C, align(2))]
+        struct Aligned([u8; 5]);
+        let mut data = Aligned([0u8; 5]);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data.0);
         prefix_str.copy_from_str("str");
 
         assert_eq!(prefix_str.as_str(), "str");
-        assert_eq!(prefix_str.size(), data.len());
+        assert_eq!(prefix_str.size(), data.0.len());
     }
 
     #[test]
@@ -165,9 +167,11 @@ mod tests {
 
         assert_eq!(prefix_str.as_str(), "string\0\0\0");
 
-        // u16
-        let mut data = [0u8; 11];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        // u16 - use aligned storage
+        #[repr(C, align(2))]
+        struct Aligned([u8; 11]);
+        let mut data = Aligned([0u8; 11]);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data.0);
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "string\0\0\0");
@@ -182,9 +186,11 @@ mod tests {
 
         assert_eq!(prefix_str.as_str(), "str");
 
-        // u16
-        let mut data = [0u8; 5];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        // u16 - use aligned storage
+        #[repr(C, align(2))]
+        struct Aligned([u8; 5]);
+        let mut data = Aligned([0u8; 5]);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data.0);
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "str");
