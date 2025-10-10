@@ -1,6 +1,5 @@
 use bytemuck::{Pod, Zeroable};
 use std::fmt::{Debug, Display};
-use std::marker::PhantomData;
 
 use crate::pod::Nullable;
 
@@ -32,10 +31,15 @@ impl_integer_sentinel! {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone, Default, Pod, Zeroable, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Pod, Zeroable, PartialEq, Eq, Hash)]
 pub struct OptionalInteger<T> {
     value: T,
-    _phantom: PhantomData<T>,
+}
+
+impl<T: IntegerSentinel> Default for OptionalInteger<T> {
+    fn default() -> Self {
+        Self::none()
+    }
 }
 
 impl<T: IntegerSentinel> OptionalInteger<T> {
@@ -43,24 +47,19 @@ impl<T: IntegerSentinel> OptionalInteger<T> {
     pub fn new(value: Option<T>) -> Self {
         Self {
             value: value.unwrap_or(T::NONE_VALUE),
-            _phantom: PhantomData,
         }
     }
 
     #[inline]
     pub fn some(value: T) -> Self {
         assert_ne!(value, T::NONE_VALUE, "Cannot use sentinel value as Some");
-        Self {
-            value,
-            _phantom: PhantomData,
-        }
+        Self { value }
     }
 
     #[inline]
     pub fn none() -> Self {
         Self {
             value: T::NONE_VALUE,
-            _phantom: PhantomData,
         }
     }
 
@@ -75,10 +74,11 @@ impl<T: IntegerSentinel> OptionalInteger<T> {
 
     #[inline]
     pub fn set(&mut self, value: Option<T>) {
-        self.value = value.unwrap_or(T::NONE_VALUE);
         if let Some(v) = value {
             assert_ne!(v, T::NONE_VALUE, "Cannot use sentinel value as Some");
         }
+
+        self.value = value.unwrap_or(T::NONE_VALUE);
     }
 
     #[inline]

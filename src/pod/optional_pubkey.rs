@@ -40,12 +40,4 @@ impl OptionalPubkey {
             None
         }
     }
-
-    #[inline]
-    pub fn map<U: Nullable, F>(self, f: F) -> OptionalPubkey
-    where
-        F: FnOnce(Pubkey) -> Pubkey,
-    {
-        OptionalPubkey::new(f(self.0))
-    }
 }
