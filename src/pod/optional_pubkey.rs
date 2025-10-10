@@ -16,3 +16,36 @@ impl Nullable for OptionalPubkey {
         self.0 == Pubkey::default()
     }
 }
+
+impl OptionalPubkey {
+    #[inline]
+    pub fn new(value: Pubkey) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub fn value(&self) -> Option<&Pubkey> {
+        if self.is_some() {
+            Some(&self.0)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn value_mut(&mut self) -> Option<&mut Pubkey> {
+        if self.is_some() {
+            Some(&mut self.0)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn map<U: Nullable, F>(self, f: F) -> OptionalPubkey
+    where
+        F: FnOnce(Pubkey) -> Pubkey,
+    {
+        OptionalPubkey::new(f(self.0))
+    }
+}

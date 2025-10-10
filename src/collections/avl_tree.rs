@@ -219,7 +219,7 @@ impl<
     /// # Arguments
     ///
     /// * `key` - the key of the node.
-    /// • `value` - the value of the node.
+    /// * `value` - the value of the node.
     pub fn insert(&mut self, key: K, value: V) -> Option<u32> {
         let mut reference_node = self.allocator.get_field(Field::Root);
 

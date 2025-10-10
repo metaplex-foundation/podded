@@ -45,4 +45,12 @@ impl<T: Nullable> PodOption<T> {
             None
         }
     }
+
+    #[inline]
+    pub fn map<U: Nullable, F>(self, f: F) -> PodOption<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        PodOption::new(f(self.0))
+    }
 }
