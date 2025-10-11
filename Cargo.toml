@@ -15,4 +15,5 @@ test = true
 
 [dependencies]
 bytemuck = { version = "^1.14", features = ["derive"] }
+paste = "1.0"
 solana-program = "<3"

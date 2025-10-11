@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use bytemuck::Pod;
 
 pub mod collections;
