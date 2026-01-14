@@ -23,11 +23,11 @@ impl_integer_sentinel! {
     u32 => u32::MAX,
     u64 => u64::MAX,
     u128 => u128::MAX,
-    i8 => i8::MIN,
-    i16 => i16::MIN,
-    i32 => i32::MIN,
-    i64 => i64::MIN,
-    i128 => i128::MIN
+    i8 => i8::MAX,
+    i16 => i16::MAX,
+    i32 => i32::MAX,
+    i64 => i64::MAX,
+    i128 => i128::MAX
 }
 
 #[repr(transparent)]
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Cannot use sentinel value as Some")]
     fn test_sentinel_value_panic_i32() {
-        OptionalI32::some(i32::MIN);
+        OptionalI32::some(i32::MAX);
     }
 
     #[test]
