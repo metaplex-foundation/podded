@@ -6,7 +6,7 @@ license = "MIT"
 name = "podded"
 readme = "README.md"
 repository = "https://github.com/metaplex-foundation/podded"
-version = "0.5.3"
+version = "0.5.4"
 
 [lib]
 crate-type = ["lib"]
